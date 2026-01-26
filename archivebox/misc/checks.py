@@ -54,7 +54,7 @@ def check_data_folder() -> None:
     
 def check_migrations():
     from archivebox import DATA_DIR
-    from ..index.sql import list_migrations
+    from archivebox.misc.db import list_migrations
 
     pending_migrations = [name for status, name in list_migrations() if not status]
     is_migrating = any(arg in sys.argv for arg in ['makemigrations', 'migrate', 'init'])
@@ -95,17 +95,17 @@ def check_io_encoding():
 
 def check_not_root():
     from archivebox.config.permissions import IS_ROOT, IN_DOCKER
-    
+
     attempted_command = ' '.join(sys.argv[1:]) if len(sys.argv) > 1 else ''
     is_getting_help = '-h' in sys.argv or '--help' in sys.argv or 'help' in sys.argv
     is_getting_version = '--version' in sys.argv or 'version' in sys.argv
     is_installing = 'setup' in sys.argv or 'install' in sys.argv
-    
+
     if IS_ROOT and not (is_getting_help or is_getting_version or is_installing):
         print('[red][!] ArchiveBox should never be run as root![/red]', file=sys.stderr)
         print('    For more information, see the security overview documentation:', file=sys.stderr)
         print('        https://github.com/ArchiveBox/ArchiveBox/wiki/Security-Overview#do-not-run-as-root', file=sys.stderr)
-        
+
         if IN_DOCKER:
             print('[red][!] When using Docker, you must run commands with [green]docker run[/green] instead of [yellow3]docker exec[/yellow3], e.g.:', file=sys.stderr)
             print('        docker compose run archivebox {attempted_command}', file=sys.stderr)
@@ -114,6 +114,17 @@ def check_not_root():
             print(f'        docker compose exec --user=archivebox archivebox /bin/bash -c "archivebox {attempted_command}"', file=sys.stderr)
             print(f'        docker exec -it --user=archivebox <container id> /bin/bash -c "archivebox {attempted_command}"', file=sys.stderr)
         raise SystemExit(2)
+
+
+def check_not_inside_source_dir():
+    """Prevent running ArchiveBox from inside its source directory (would pollute repo with data files)."""
+    cwd = Path(os.getcwd()).resolve()
+    is_source_dir = (cwd / 'archivebox' / '__init__.py').exists() and (cwd / 'pyproject.toml').exists()
+    data_dir_set_elsewhere = os.environ.get('DATA_DIR', '').strip() and Path(os.environ['DATA_DIR']).resolve() != cwd
+    is_testing = 'pytest' in sys.modules or 'unittest' in sys.modules
+
+    if is_source_dir and not data_dir_set_elsewhere and not is_testing:
+        raise SystemExit('[!] Cannot run from source dir, set DATA_DIR or cd to a data folder first')
 
 
 def check_data_dir_permissions():
@@ -169,9 +180,11 @@ def check_tmp_dir(tmp_dir=None, throw=False, quiet=False, must_exist=True):
         return len(f'file://{socket_file}') <= 96
 
     tmp_is_valid = False
+    allow_no_unix_sockets = os.environ.get('ARCHIVEBOX_ALLOW_NO_UNIX_SOCKETS', '').lower() in ('1', 'true', 'yes')
     try:
         tmp_is_valid = dir_is_writable(tmp_dir)
-        tmp_is_valid = tmp_is_valid and assert_dir_can_contain_unix_sockets(tmp_dir)
+        if not allow_no_unix_sockets:
+            tmp_is_valid = tmp_is_valid and assert_dir_can_contain_unix_sockets(tmp_dir)
         assert tmp_is_valid, f'ArchiveBox user PUID={ARCHIVEBOX_USER} PGID={ARCHIVEBOX_GROUP} is unable to write to TMP_DIR={tmp_dir}'            
         assert len(f'file://{socket_file}') <= 96, f'ArchiveBox TMP_DIR={tmp_dir} is too long, dir containing unix socket files must be <90 chars.'
         return True
@@ -210,7 +223,7 @@ def check_lib_dir(lib_dir: Path | None = None, throw=False, quiet=False, must_ex
     
     lib_dir = lib_dir or STORAGE_CONFIG.LIB_DIR
     
-    assert lib_dir == archivebox.pm.hook.get_LIB_DIR(), "lib_dir is not the same as the one in the flat config"
+    # assert lib_dir == STORAGE_CONFIG.LIB_DIR, "lib_dir is not the same as the one in the flat config"
     
     if not must_exist and not os.path.isdir(lib_dir):
         return True

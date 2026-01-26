@@ -17,7 +17,7 @@ TEST_CONFIG = {
 
     'DATA_DIR': 'data.tests',
     
-    'SAVE_ARCHIVE_DOT_ORG': 'False',
+    'SAVE_ARCHIVEDOTORG': 'False',
     'SAVE_TITLE': 'False',
     
     'USE_CURL': 'False',
@@ -31,7 +31,6 @@ DATA_DIR = 'data.tests'
 os.environ.update(TEST_CONFIG)
 
 from ..main import init
-from ..index import load_main_index
 from archivebox.config.constants import (
     SQL_INDEX_FILENAME,
     JSON_INDEX_FILENAME,

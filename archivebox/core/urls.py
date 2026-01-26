@@ -7,10 +7,10 @@ from django.views.generic.base import RedirectView
 
 from archivebox.misc.serve_static import serve_static
 
-from core.admin_site import archivebox_admin
-from core.views import HomepageView, SnapshotView, PublicIndexView, AddView, HealthCheckView
+from archivebox.core.admin_site import archivebox_admin
+from archivebox.core.views import HomepageView, SnapshotView, SnapshotPathView, PublicIndexView, AddView, WebAddView, HealthCheckView, live_progress_view
 
-from workers.views import JobsDashboardView
+from archivebox.workers.views import JobsDashboardView
 
 # GLOBAL_CONTEXT doesn't work as-is, disabled for now: https://github.com/ArchiveBox/ArchiveBox/discussions/1306
 # from archivebox.config import VERSION, VERSIONS_AVAILABLE, CAN_UPGRADE
@@ -29,9 +29,15 @@ urlpatterns = [
     path('docs/', RedirectView.as_view(url='https://github.com/ArchiveBox/ArchiveBox/wiki'), name='Docs'),
 
     path('public/', PublicIndexView.as_view(), name='public-index'),
+    path('public.html', RedirectView.as_view(url='/public/'), name='public-index-html'),
     
     path('archive/', RedirectView.as_view(url='/')),
     path('archive/<path:path>', SnapshotView.as_view(), name='Snapshot'),
+    re_path(r'^web/(?P<url>(?!\d{4}(?:\d{2})?(?:\d{2})?(?:/|$)).+)$', WebAddView.as_view(), name='web-add'),
+    re_path(r'^(?P<username>[^/]+)/(?P<date>\d{4}(?:\d{2})?(?:\d{2})?)/(?P<url>https?://.*)$', SnapshotPathView.as_view(), name='snapshot-path-url'),
+    re_path(r'^(?P<username>[^/]+)/(?P<date>\d{4}(?:\d{2})?(?:\d{2})?)/(?P<domain>[^/]+)(?:/(?P<snapshot_id>[0-9a-fA-F-]{8,36})(?:/(?P<path>.*))?)?$', SnapshotPathView.as_view(), name='snapshot-path'),
+    re_path(r'^(?P<username>[^/]+)/(?P<url>https?://.*)$', SnapshotPathView.as_view(), name='snapshot-path-url-nodate'),
+    re_path(r'^(?P<username>[^/]+)/(?P<domain>[^/]+)(?:/(?P<snapshot_id>[0-9a-fA-F-]{8,36})(?:/(?P<path>.*))?)?$', SnapshotPathView.as_view(), name='snapshot-path-nodate'),
 
     path('admin/core/snapshot/add/', RedirectView.as_view(url='/add/')),
     path('add/', AddView.as_view(), name='add'),
@@ -43,9 +49,11 @@ urlpatterns = [
 
 
     path('accounts/', include('django.contrib.auth.urls')),
+
+    path('admin/live-progress/', live_progress_view, name='live_progress'),
     path('admin/', archivebox_admin.urls),
-    
-    path("api/",      include('api.urls'), name='api'),
+
+    path("api/",      include('archivebox.api.urls'), name='api'),
 
     path('health/', HealthCheckView.as_view(), name='healthcheck'),
     path('error/', lambda *_: 1/0),                                             # type: ignore

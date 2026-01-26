@@ -10,20 +10,7 @@ from rich import print
 from archivebox.misc.util import enforce_types, docstring
 from archivebox.config import DATA_DIR, CONSTANTS, ARCHIVE_DIR
 from archivebox.config.common import SHELL_CONFIG
-from archivebox.index.json import parse_json_links_details
-from archivebox.index import (
-    load_main_index,
-    get_indexed_folders,
-    get_archived_folders,
-    get_invalid_folders,
-    get_unarchived_folders,
-    get_present_folders,
-    get_valid_folders,
-    get_duplicate_folders,
-    get_orphaned_folders,
-    get_corrupted_folders,
-    get_unrecognized_folders,
-)
+from archivebox.misc.legacy import parse_json_links_details
 from archivebox.misc.system import get_dir_size
 from archivebox.misc.logging_util import printable_filesize
 
@@ -33,8 +20,8 @@ def status(out_dir: Path=DATA_DIR) -> None:
     """Print out some info and statistics about the archive collection"""
 
     from django.contrib.auth import get_user_model
-    from archivebox.index.sql import get_admins
-    from core.models import Snapshot
+    from archivebox.misc.db import get_admins
+    from archivebox.core.models import Snapshot
     User = get_user_model()
 
     print('[green]\\[*] Scanning archive main index...[/green]')
@@ -44,7 +31,7 @@ def status(out_dir: Path=DATA_DIR) -> None:
     print(f'    Index size: {size} across {num_files} files')
     print()
 
-    links = load_main_index(out_dir=out_dir)
+    links = Snapshot.objects.all()
     num_sql_links = links.count()
     num_link_details = sum(1 for link in parse_json_links_details(out_dir=out_dir))
     print(f'    > SQL Main Index: {num_sql_links} links'.ljust(36), f'(found in {CONSTANTS.SQL_INDEX_FILENAME})')
@@ -56,42 +43,40 @@ def status(out_dir: Path=DATA_DIR) -> None:
     size = printable_filesize(num_bytes)
     print(f'    Size: {size} across {num_files} files in {num_dirs} directories')
 
-    num_indexed = len(get_indexed_folders(links, out_dir=out_dir))
-    num_archived = len(get_archived_folders(links, out_dir=out_dir))
-    num_unarchived = len(get_unarchived_folders(links, out_dir=out_dir))
-    print(f'    > indexed: {num_indexed}'.ljust(36), f'({get_indexed_folders.__doc__})')
-    print(f'      > archived: {num_archived}'.ljust(36), f'({get_archived_folders.__doc__})')
-    print(f'      > unarchived: {num_unarchived}'.ljust(36), f'({get_unarchived_folders.__doc__})')
-    
-    num_present = len(get_present_folders(links, out_dir=out_dir))
-    num_valid = len(get_valid_folders(links, out_dir=out_dir))
+    # Use DB as source of truth for snapshot status
+    num_indexed = links.count()
+    num_archived = links.filter(status='archived').count() or links.exclude(downloaded_at=None).count()
+    num_unarchived = links.filter(status='queued').count() or links.filter(downloaded_at=None).count()
+    print(f'    > indexed: {num_indexed}'.ljust(36), '(total snapshots in DB)')
+    print(f'      > archived: {num_archived}'.ljust(36), '(snapshots with archived content)')
+    print(f'      > unarchived: {num_unarchived}'.ljust(36), '(snapshots pending archiving)')
+
+    # Count directories on filesystem
+    num_present = 0
+    orphaned_dirs = []
+    if ARCHIVE_DIR.exists():
+        for entry in ARCHIVE_DIR.iterdir():
+            if entry.is_dir():
+                num_present += 1
+                if not links.filter(timestamp=entry.name).exists():
+                    orphaned_dirs.append(str(entry))
+
+    num_valid = min(num_present, num_indexed)  # approximate
     print()
-    print(f'    > present: {num_present}'.ljust(36), f'({get_present_folders.__doc__})')
-    print(f'      > [green]valid:[/green] {num_valid}'.ljust(36), f'               ({get_valid_folders.__doc__})')
-    
-    duplicate = get_duplicate_folders(links, out_dir=out_dir)
-    orphaned = get_orphaned_folders(links, out_dir=out_dir)
-    corrupted = get_corrupted_folders(links, out_dir=out_dir)
-    unrecognized = get_unrecognized_folders(links, out_dir=out_dir)
-    num_invalid = len({**duplicate, **orphaned, **corrupted, **unrecognized})
-    print(f'      > [red]invalid:[/red] {num_invalid}'.ljust(36), f'           ({get_invalid_folders.__doc__})')
-    print(f'        > duplicate: {len(duplicate)}'.ljust(36), f'({get_duplicate_folders.__doc__})')
-    print(f'        > orphaned: {len(orphaned)}'.ljust(36), f'({get_orphaned_folders.__doc__})')
-    print(f'        > corrupted: {len(corrupted)}'.ljust(36), f'({get_corrupted_folders.__doc__})')
-    print(f'        > unrecognized: {len(unrecognized)}'.ljust(36), f'({get_unrecognized_folders.__doc__})')
+    print(f'    > present: {num_present}'.ljust(36), '(directories in archive/)')
+    print(f'      > [green]valid:[/green] {num_valid}'.ljust(36), '               (directories with matching DB entry)')
+
+    num_orphaned = len(orphaned_dirs)
+    print(f'      > [red]orphaned:[/red] {num_orphaned}'.ljust(36), '         (directories without matching DB entry)')
 
     if num_indexed:
-        print('    [violet]Hint:[/violet] You can list link data directories by status like so:')
-        print('        [green]archivebox list --status=<status>  (e.g. indexed, corrupted, archived, etc.)[/green]')
+        print('    [violet]Hint:[/violet] You can list snapshots by status like so:')
+        print('        [green]archivebox list --status=<status>  (e.g. archived, queued, etc.)[/green]')
 
-    if orphaned:
+    if orphaned_dirs:
         print('    [violet]Hint:[/violet] To automatically import orphaned data directories into the main index, run:')
         print('        [green]archivebox init[/green]')
 
-    if num_invalid:
-        print('    [violet]Hint:[/violet] You may need to manually remove or fix some invalid data directories, afterwards make sure to run:')
-        print('        [green]archivebox init[/green]')
-    
     print()
     print('[green]\\[*] Scanning recent archive changes and user logins:[/green]')
     print(f'[yellow]   {CONSTANTS.LOGS_DIR}/*[/yellow]')

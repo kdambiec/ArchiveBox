@@ -104,7 +104,8 @@ archivebox init --setup
 curl -fsSL 'https://get.archivebox.io' | bash
 </code></pre>
 <br/>
-<sub>Open <a href="http://localhost:8000"><code>http://localhost:8000</code></a> to see your server's Web UI ➡️</sub>
+<sub>Open <a href="http://web.archivebox.localhost:8000"><code>http://web.archivebox.localhost:8000</code></a> for the public UI and <a href="http://admin.archivebox.localhost:8000"><code>http://admin.archivebox.localhost:8000</code></a> for the admin UI ➡️</sub><br/>
+<sub>Set <code>LISTEN_HOST</code> to change the base domain; <code>web.</code> and <code>admin.</code> subdomains are used automatically.</sub>
 </details>
 <br/>
 
@@ -132,7 +133,7 @@ curl -fsSL 'https://get.archivebox.io' | bash
 - [**Extracts a wide variety of content out-of-the-box**](https://github.com/ArchiveBox/ArchiveBox/issues/51): [media (yt-dlp), articles (readability), code (git), etc.](#output-formats)
 - [**Supports scheduled/realtime importing**](https://github.com/ArchiveBox/ArchiveBox/wiki/Scheduled-Archiving) from [many types of sources](#input-formats)
 - [**Uses standard, durable, long-term formats**](#output-formats) like HTML, JSON, PDF, PNG, MP4, TXT, and WARC
-- [**Usable as a oneshot CLI**](https://github.com/ArchiveBox/ArchiveBox/wiki/Usage#CLI-Usage), [**self-hosted web UI**](https://github.com/ArchiveBox/ArchiveBox/wiki/Usage#UI-Usage), [Python API](https://docs.archivebox.io/en/dev/apidocs/archivebox/archivebox.html) (BETA), [REST API](https://github.com/ArchiveBox/ArchiveBox/issues/496) (ALPHA), or [desktop app](https://github.com/ArchiveBox/electron-archivebox)
+- [**Powerful CLI**](https://github.com/ArchiveBox/ArchiveBox/wiki/Usage#CLI-Usage), [**self-hosted web UI**](https://github.com/ArchiveBox/ArchiveBox/wiki/Usage#UI-Usage), [Python API](https://docs.archivebox.io/en/dev/apidocs/archivebox/archivebox.html) (BETA), [REST API](https://github.com/ArchiveBox/ArchiveBox/issues/496) (ALPHA), or [desktop app](https://github.com/ArchiveBox/electron-archivebox)
 - [**Saves all pages to archive.org as well**](https://github.com/ArchiveBox/ArchiveBox/wiki/Configuration#save_archive_dot_org) by default for redundancy (can be [disabled](https://github.com/ArchiveBox/ArchiveBox/wiki/Security-Overview#stealth-mode) for local-only mode)
 - Advanced users: support for archiving [content requiring login/paywall/cookies](https://github.com/ArchiveBox/ArchiveBox/wiki/Configuration#chrome_user_data_dir) (see wiki security caveats!)
 - Planned: support for running [JS during archiving](https://github.com/ArchiveBox/ArchiveBox/issues/51) to adblock, [autoscroll](https://github.com/ArchiveBox/ArchiveBox/issues/80), [modal-hide](https://github.com/ArchiveBox/ArchiveBox/issues/175), [thread-expand](https://github.com/ArchiveBox/ArchiveBox/issues/345)
@@ -411,6 +412,7 @@ See <a href="#%EF%B8%8F-cli-usage">below</a> for usage examples using the CLI, W
 <ul>
 <li><s>TrueNAS: <a href="https://truecharts.org/charts/stable/archivebox/">Official ArchiveBox TrueChart</a> / <a href="https://dev.to/finloop/setting-up-archivebox-on-truenas-scale-1788">Custom App Guide</a></s> (<a href="https://truecharts.org/news/scale-deprecation/">TrueCharts is discontinued</a>, wait for <a href="https://forums.truenas.com/t/the-future-of-electric-eel-and-apps/5409/">Electric Eel</a>)</li>
 <li><a href="https://unraid.net/community/apps?q=archivebox#r">UnRaid</a></li>
+<li><a href="https://community-scripts.github.io/ProxmoxVE/scripts?id=archivebox">Proxmox</a></li>
 <li><a href="https://github.com/YunoHost-Apps/archivebox_ynh">Yunohost</a></li>
 <li><a href="https://www.cloudron.io/store/io.archivebox.cloudronapp.html">Cloudron</a></li>
 <li><a href="https://docs.saltbox.dev/sandbox/apps/archivebox/">Saltbox</a></li>
@@ -468,6 +470,7 @@ For more discussion on managed and paid hosting options see here: <a href="https
 #### ➡️&nbsp; Next Steps
 
 - Import URLs from some of the supported [Input Formats](#input-formats) or view the supported [Output Formats](#output-formats)...
+- (Optional) Create a persona and import browser cookies to archive logged-in sites: `archivebox persona create --import=chrome personal`
 - Tweak your UI or archiving behavior [Configuration](#configuration), read about some of the [Caveats](#caveats), or [Troubleshoot](https://github.com/ArchiveBox/ArchiveBox/wiki/Troubleshooting)
 - Read about the [Dependencies](#dependencies) used for archiving, the [Upgrading Process](https://github.com/ArchiveBox/ArchiveBox/wiki/Upgrading-or-Merging-Archives), or the [Archive Layout](#archive-layout) on disk...
 - Or check out our full [Documentation](#documentation) or [Community Wiki](#internet-archiving-ecosystem)...
@@ -494,13 +497,18 @@ docker compose run archivebox help
 
 # equivalent: docker run -it -v $PWD:/data archivebox/archivebox [subcommand] [--help]
 docker run -it -v $PWD:/data archivebox/archivebox help
+
+# optional: import your browser cookies into a persona for logged-in archiving
+archivebox persona create --import=chrome personal
+# supported: chrome/chromium/brave/edge (Chromium-based only)
+# re-running import merges/dedupes cookies.txt (by domain/path/name) but replaces chrome_user_data
 ```
 
 #### ArchiveBox Subcommands
 
 - `archivebox` `help`/`version` to see the list of available subcommands / currently installed version info
 - `archivebox` `setup`/`init`/`config`/`status`/`shell`/`manage` to administer your collection
-- `archivebox` `add`/`oneshot`/`schedule` to pull in fresh URLs from [bookmarks/history/RSS/etc.](#input-formats)
+- `archivebox` `add`/`schedule` to pull in fresh URLs from [bookmarks/history/RSS/etc.](#input-formats)
 - `archivebox` `list`/`update`/`remove` to manage existing Snapshots in your collection
 
 <br/>
@@ -586,7 +594,8 @@ docker run -v $PWD:/data -it archivebox/archivebox archivebox manage createsuper
 docker run -v $PWD:/data -it -p 8000:8000 archivebox/archivebox
 </code></pre>
 
-<sup>Open <a href="http://localhost:8000"><code>http://localhost:8000</code></a> to see your server's Web UI ➡️</sup>
+<sup>Open <a href="http://web.archivebox.localhost:8000"><code>http://web.archivebox.localhost:8000</code></a> for the public UI and <a href="http://admin.archivebox.localhost:8000"><code>http://admin.archivebox.localhost:8000</code></a> for the admin UI ➡️</sup><br/>
+<sup>Set <code>LISTEN_HOST</code> to change the base domain; <code>web.</code> and <code>admin.</code> subdomains are used automatically.</sup>
 <br/><br/>
 <i>For more info, see our <a href="https://github.com/ArchiveBox/ArchiveBox/wiki/Usage#ui-usage">Usage: Web UI</a> wiki. ➡️</i>
 <br/><br/>
@@ -762,8 +771,8 @@ The configuration is documented here: **[Configuration Wiki](https://github.com/
 <br/>
 TIMEOUT=240                # default: 60    add more seconds on slower networks
 CHECK_SSL_VALIDITY=False   # default: True  False = allow saving URLs w/ bad SSL
-SAVE_ARCHIVE_DOT_ORG=False # default: True  False = disable Archive.org saving
-MAX_MEDIA_SIZE=1500m       # default: 750m  raise/lower youtubedl output size
+SAVE_ARCHIVEDOTORG=False # default: True  False = disable Archive.org saving
+YTDLP_MAX_SIZE=1500m       # default: 750m  raise/lower yt-dlp output size
 <br/>
 PUBLIC_INDEX=True          # default: True  whether anon users can view index
 PUBLIC_SNAPSHOTS=True      # default: True  whether anon users can view pages
@@ -899,7 +908,7 @@ Each snapshot subfolder <code>data/archive/TIMESTAMP/</code> includes a static <
 
 ## Static Archive Exporting
 
-You can create one-off archives of individual URLs with `archivebox oneshot`, or export your index as static HTML using `archivebox list` (so you can view it without an ArchiveBox server).
+You can export your index as static HTML using `archivebox list` (so you can view it without an ArchiveBox server).
 
 <br/>
 <details>
@@ -909,10 +918,7 @@ You can create one-off archives of individual URLs with `archivebox oneshot`, or
 <p><em>NOTE: These exports are not paginated, exporting many URLs or the entire archive at once may be slow. Use the filtering CLI flags on the <code>archivebox list</code> command to export specific Snapshots or ranges.</em></p>
 </blockquote>
 
-<pre lang="bash"><code style="white-space: pre-line"># do a one-off single URL archive wihout needing a data dir initialized
-archivebox oneshot 'https://example.com'
-
-# archivebox list --help
+<pre lang="bash"><code style="white-space: pre-line"># archivebox list --help
 archivebox list --html --with-headers > index.html     # export to static html table
 archivebox list --json --with-headers > index.json     # export to json blob
 archivebox list --csv=timestamp,url,title > index.csv  # export to csv spreadsheet
@@ -958,7 +964,7 @@ archivebox add 'https://docs.google.com/document/d/12345somePrivateDocument'
 archivebox add 'https://vimeo.com/somePrivateVideo'
 
 # without first disabling saving to Archive.org:
-archivebox config --set SAVE_ARCHIVE_DOT_ORG=False  # disable saving all URLs in Archive.org
+archivebox config --set SAVE_ARCHIVEDOTORG=False  # disable saving all URLs in Archive.org
 
 # restrict the main index, Snapshot content, and Add Page to authenticated users as-needed:
 archivebox config --set PUBLIC_INDEX=False
@@ -1091,7 +1097,7 @@ Because ArchiveBox is designed to ingest a large volume of URLs with multiple co
 <br/>
 
 <ul>
-<li><strong>ArchiveBox can use anywhere from ~1gb per 1000 Snapshots, to ~50gb per 1000 Snapshots</strong>, mostly dependent on whether you're saving audio & video using <code>SAVE_MEDIA=True</code> and whether you lower <code>MEDIA_MAX_SIZE=750mb</code>.</li>
+<li><strong>ArchiveBox can use anywhere from ~1gb per 1000 Snapshots, to ~50gb per 1000 Snapshots</strong>, mostly dependent on whether you're saving video/audio using <code>YTDLP_ENABLED=True</code> and whether you lower <code>YTDLP_MAX_SIZE=750m</code>.</li>
 <li>Disk usage can be reduced by using a compressed/<a href="https://www.ixsystems.com/blog/ixsystems-and-klara-systems-celebrate-valentines-day-with-a-heartfelt-donation-of-fast-dedupe-to-openzfs-and-truenas/">deduplicated</a> filesystem like <a href="https://www.reddit.com/r/zfs/comments/t9cexx/a_simple_real_world_zfs_compression_speed_an/">ZFS</a>/BTRFS, or by turning off extractors methods you don't need. You can also deduplicate content with a tool like <a href="https://github.com/adrianlopezroche/fdupes"><code>fdupes</code></a> or <a href="https://github.com/pauldreik/rdfind"><code>rdfind</code></a>.  
 </li>
 <li><strong>Don't store large collections on older filesystems like EXT3/FAT</strong> as they may not be able to handle more than 50k directory entries in the <code>data/archive/</code> folder.

@@ -16,7 +16,7 @@ from .permissions import SudoPermission, IS_ROOT, ARCHIVEBOX_USER
 #############################################################################################
 
 PACKAGE_DIR: Path = Path(__file__).resolve().parent.parent    # archivebox source code dir
-DATA_DIR: Path = Path(os.getcwd()).resolve()                  # archivebox user data dir
+DATA_DIR: Path = Path(os.environ.get('DATA_DIR', os.getcwd())).resolve()  # archivebox user data dir
 ARCHIVE_DIR: Path = DATA_DIR / 'archive'                      # archivebox snapshot data dir
 
 IN_DOCKER = os.environ.get('IN_DOCKER', False) in ('1', 'true', 'True', 'TRUE', 'yes')
@@ -224,12 +224,6 @@ def get_data_locations():
             "is_valid": os.path.isfile(DATABASE_FILE) and os.access(DATABASE_FILE, os.R_OK) and os.access(DATABASE_FILE, os.W_OK),
             "is_mount": os.path.ismount(DATABASE_FILE.resolve()),
         },
-        "QUEUE_DATABASE": {
-            "path": CONSTANTS.QUEUE_DATABASE_FILE,
-            "enabled": True,
-            "is_valid": os.path.isfile(CONSTANTS.QUEUE_DATABASE_FILE) and os.access(CONSTANTS.QUEUE_DATABASE_FILE, os.R_OK) and os.access(CONSTANTS.QUEUE_DATABASE_FILE, os.W_OK),
-            "is_mount": os.path.ismount(CONSTANTS.QUEUE_DATABASE_FILE),
-        },
         "ARCHIVE_DIR": {
             "path": ARCHIVE_DIR.resolve(),
             "enabled": True,
@@ -267,7 +261,7 @@ def get_data_locations():
 def get_code_locations():
     from archivebox.config import CONSTANTS
     from archivebox.config.common import STORAGE_CONFIG
-    
+
     return benedict({
         'PACKAGE_DIR': {
             'path': (PACKAGE_DIR).resolve(),
@@ -280,9 +274,9 @@ def get_code_locations():
             'is_valid': os.access(CONSTANTS.STATIC_DIR, os.R_OK) and os.access(CONSTANTS.STATIC_DIR, os.X_OK),                                                # read + list
         },
         'CUSTOM_TEMPLATES_DIR': {
-            'path': CONSTANTS.CUSTOM_TEMPLATES_DIR.resolve(),
-            'enabled': os.path.isdir(CONSTANTS.CUSTOM_TEMPLATES_DIR),
-            'is_valid': os.path.isdir(CONSTANTS.CUSTOM_TEMPLATES_DIR) and os.access(CONSTANTS.CUSTOM_TEMPLATES_DIR, os.R_OK),                                      # read
+            'path': STORAGE_CONFIG.CUSTOM_TEMPLATES_DIR.resolve(),
+            'enabled': os.path.isdir(STORAGE_CONFIG.CUSTOM_TEMPLATES_DIR),
+            'is_valid': os.path.isdir(STORAGE_CONFIG.CUSTOM_TEMPLATES_DIR) and os.access(STORAGE_CONFIG.CUSTOM_TEMPLATES_DIR, os.R_OK),                                      # read
         },
         'USER_PLUGINS_DIR': {
             'path': CONSTANTS.USER_PLUGINS_DIR.resolve(),
@@ -293,6 +287,11 @@ def get_code_locations():
             'path': STORAGE_CONFIG.LIB_DIR.resolve(),
             'enabled': True,
             'is_valid': os.path.isdir(STORAGE_CONFIG.LIB_DIR) and os.access(STORAGE_CONFIG.LIB_DIR, os.R_OK) and os.access(STORAGE_CONFIG.LIB_DIR, os.W_OK),                      # read + write
+        },
+        'LIB_BIN_DIR': {
+            'path': STORAGE_CONFIG.LIB_BIN_DIR.resolve(),
+            'enabled': True,
+            'is_valid': os.path.isdir(STORAGE_CONFIG.LIB_BIN_DIR) and os.access(STORAGE_CONFIG.LIB_BIN_DIR, os.R_OK) and os.access(STORAGE_CONFIG.LIB_BIN_DIR, os.W_OK),        # read + write
         },
     })
 

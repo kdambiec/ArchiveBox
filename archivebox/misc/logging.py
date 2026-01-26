@@ -1,7 +1,7 @@
 __package__ = 'archivebox.misc'
 
-# TODO: merge/dedupe this file with archivebox/logging_util.py
-
+# Low-level logging primitives (Rich console, ANSI colors, stdout/stderr helpers)
+# Higher-level logging functions are in logging_util.py
 
 import sys
 from typing import Optional, Union, Tuple, List
@@ -13,9 +13,11 @@ from rich.console import Console
 from rich.highlighter import Highlighter
 
 # SETUP RICH CONSOLE / TTY detection / COLOR / PROGRESS BARS
-CONSOLE = Console()
-STDERR = Console(stderr=True)
-IS_TTY = CONSOLE.is_interactive
+# Disable wrapping - use soft_wrap=True and large width so text flows naturally
+# Colors are preserved, just no hard line breaks inserted
+CONSOLE = Console(width=32768, soft_wrap=True, force_terminal=True)
+STDERR = Console(stderr=True, width=32768, soft_wrap=True, force_terminal=True)
+IS_TTY = sys.stdout.isatty()
 
 class RainbowHighlighter(Highlighter):
     def highlight(self, text):

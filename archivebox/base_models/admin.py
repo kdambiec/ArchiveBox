@@ -1,174 +1,235 @@
+"""Base admin classes for models using UUIDv7."""
+
 __package__ = 'archivebox.base_models'
 
-from typing import Any
+import json
 
-from django.contrib import admin, messages
-from django.core.exceptions import ValidationError
-from django.utils.html import format_html
-from django.utils.safestring import mark_safe
-from django.shortcuts import redirect
-
-from django_object_actions import DjangoObjectActions, action
-
-from archivebox.misc.util import parse_date
-
-from .abid import ABID
+from django import forms
+from django.contrib import admin
+from django.utils.html import format_html, mark_safe
+from django_object_actions import DjangoObjectActions
 
 
-def highlight_diff(display_val: Any, compare_val: Any, invert: bool=False, color_same: str | None=None, color_diff: str | None=None):
-    """highlight each character in red that differs with the char at the same index in compare_val"""
+class KeyValueWidget(forms.Widget):
+    """
+    A widget that renders JSON dict as editable key-value input fields
+    with + and - buttons to add/remove rows.
+    Includes autocomplete for available config keys from the plugin system.
+    """
+    template_name = None  # We render manually
 
-    display_val = str(display_val)
-    compare_val = str(compare_val)
+    class Media:
+        css = {
+            'all': []
+        }
+        js = []
 
-    if len(compare_val) < len(display_val):
-        compare_val += ' ' * (len(display_val) - len(compare_val))
-
-    similar_color, highlighted_color = color_same or 'inherit', color_diff or 'red'
-    if invert:
-        similar_color, highlighted_color = color_same or 'green', color_diff or 'inherit'
-
-    return mark_safe(''.join(
-        format_html('<span style="color: {};">{}</span>', highlighted_color, display_val[i])
-        if display_val[i] != compare_val[i] else
-        format_html('<span style="color: {};">{}</span>', similar_color, display_val[i])
-        for i in range(len(display_val))
-    ))
-
-def get_abid_info(self, obj, request=None):
-    from archivebox.api.auth import get_or_create_api_token
-    
-    try:
-        #abid_diff = f' != obj.ABID: {highlight_diff(obj.ABID, obj.abid)} ❌' if str(obj.ABID) != str(obj.abid) else ' == .ABID ✅'
-
-        fresh_values = obj.ABID_FRESH_VALUES
-        fresh_hashes = obj.ABID_FRESH_HASHES
-        fresh_diffs = obj.ABID_FRESH_DIFFS
-        fresh_abid = ABID(**fresh_hashes)
-        
-        fresh_abid_diff = f'❌ != &nbsp; .fresh_abid: {highlight_diff(fresh_abid, obj.ABID)}' if str(fresh_abid) != str(obj.ABID) else '✅'
-        fresh_uuid_diff = f'❌ != &nbsp; .fresh_uuid: {highlight_diff(fresh_abid.uuid, obj.ABID.uuid)}' if str(fresh_abid.uuid) != str(obj.ABID.uuid) else '✅'
-
-        id_pk_diff = f'❌ !=  .pk: {highlight_diff(obj.pk, obj.id)}' if str(obj.pk) != str(obj.id) else '✅'
-
-        fresh_ts = parse_date(fresh_values['ts']) or None
-        ts_diff = f'❌ != {highlight_diff( fresh_hashes["ts"], obj.ABID.ts)}' if  fresh_hashes["ts"] != obj.ABID.ts else '✅'
-
-        derived_uri = fresh_hashes['uri']
-        uri_diff = f'❌ != {highlight_diff(derived_uri, obj.ABID.uri)}' if derived_uri != obj.ABID.uri else '✅'
-
-        derived_subtype = fresh_hashes['subtype']
-        subtype_diff = f'❌ != {highlight_diff(derived_subtype, obj.ABID.subtype)}' if derived_subtype != obj.ABID.subtype else '✅'
-
-        derived_rand = fresh_hashes['rand']
-        rand_diff = f'❌ != {highlight_diff(derived_rand, obj.ABID.rand)}' if derived_rand != obj.ABID.rand else '✅'
-
-        return format_html(
-            # URL Hash: <code style="font-size: 10px; user-select: all">{}</code><br/>
-            '''
-            <a href="{}" style="font-size: 16px; font-family: monospace; user-select: all; border-radius: 8px; background-color: #ddf; padding: 3px 5px; border: 1px solid #aaa; margin-bottom: 8px; display: inline-block; vertical-align: top;">{}</a> &nbsp; &nbsp; <a href="{}" style="color: limegreen; font-size: 0.9em; vertical-align: 1px; font-family: monospace;">📖 API DOCS</a>
-            <br/><hr/>
-            <div style="opacity: 0.8">
-            &nbsp; &nbsp; <small style="opacity: 0.8">.id: &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;&nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;<code style="font-size: 10px; user-select: all">{}</code> &nbsp; &nbsp; {}</small><br/>
-            &nbsp; &nbsp; <small style="opacity: 0.8">.abid.uuid: &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; <code style="font-size: 10px; user-select: all">{}</code> &nbsp; &nbsp; {}</small><br/>
-            &nbsp; &nbsp; <small style="opacity: 0.8">.abid: &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; <code style="font-size: 10px; user-select: all">{}</code> &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; {}</small><br/>
-            <hr/>
-            &nbsp; &nbsp; TS: &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp;<code style="font-size: 10px;"><b style="user-select: all">{}</b> &nbsp; {}</code> &nbsp; &nbsp; &nbsp;&nbsp; <code style="font-size: 10px;"><b>{}</b></code> {}: <code style="user-select: all">{}</code><br/>
-            &nbsp; &nbsp; URI: &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; <code style="font-size: 10px;"><b style="user-select: all">{}</b> &nbsp; &nbsp; {}</code> &nbsp;&nbsp; &nbsp; &nbsp; &nbsp;&nbsp; <code style="font-size: 10px;"><b>{}</b></code> <span style="display:inline-block; vertical-align: -4px; width: 330px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{}: <code style="user-select: all">{}</code></span><br/>
-            &nbsp; &nbsp; SUBTYPE: &nbsp; &nbsp; &nbsp; <code style="font-size: 10px;"><b style="user-select: all">{}</b> &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; {}</code> &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; <code style="font-size: 10px;"><b>{}</b></code> {}: <code style="user-select: all">{}</code><br/>
-            &nbsp; &nbsp; RAND: &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; <code style="font-size: 10px;"><b style="user-select: all">{}</b> &nbsp; &nbsp; &nbsp; {}</code> &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; <code style="font-size: 10px;"><b>{}</b></code> {}: <code style="user-select: all">{}</code></code>
-            <br/><hr/>
-            <span style="color: #f375a0">{}</span> <code style="color: red"><b>{}</b></code> {}
-            </div>
-            ''',
-            obj.api_url + (f'?api_key={get_or_create_api_token(request.user)}' if request and request.user else ''), obj.api_url, obj.api_docs_url,
-            highlight_diff(obj.id, obj.ABID.uuid, invert=True), mark_safe(id_pk_diff),
-            highlight_diff(obj.ABID.uuid, obj.id, invert=True), mark_safe(fresh_uuid_diff),
-            highlight_diff(obj.abid, fresh_abid), mark_safe(fresh_abid_diff),
-            # str(fresh_abid.uuid), mark_safe(fresh_uuid_diff),
-            # str(fresh_abid), mark_safe(fresh_abid_diff),
-            highlight_diff(obj.ABID.ts,  fresh_hashes['ts']), highlight_diff(str(obj.ABID.uuid)[0:14], str(fresh_abid.uuid)[0:14]), mark_safe(ts_diff), obj.abid_ts_src, fresh_ts and fresh_ts.isoformat(),
-            highlight_diff(obj.ABID.uri, derived_uri), highlight_diff(str(obj.ABID.uuid)[14:26], str(fresh_abid.uuid)[14:26]), mark_safe(uri_diff), obj.abid_uri_src, str(fresh_values['uri']),
-            highlight_diff(obj.ABID.subtype, derived_subtype), highlight_diff(str(obj.ABID.uuid)[26:28], str(fresh_abid.uuid)[26:28]), mark_safe(subtype_diff), obj.abid_subtype_src, str(fresh_values['subtype']),
-            highlight_diff(obj.ABID.rand, derived_rand), highlight_diff(str(obj.ABID.uuid)[28:36], str(fresh_abid.uuid)[28:36]), mark_safe(rand_diff), obj.abid_rand_src, str(fresh_values['rand'])[-7:],
-            'Some values the ABID depends on have changed since the ABID was issued:' if fresh_diffs else '',
-            ", ".join(diff['abid_src'] for diff in fresh_diffs.values()),
-            '(clicking "Regenerate ABID" in the upper right will assign a new ABID, breaking any external references to the old ABID)' if fresh_diffs else '',
-        )
-    except Exception as e:
-        # import ipdb; ipdb.set_trace()
-        return str(e)
-
-
-class ABIDModelAdmin(DjangoObjectActions, admin.ModelAdmin):
-    list_display = ('created_at', 'created_by', 'abid')
-    sort_fields = ('created_at', 'created_by', 'abid')
-    readonly_fields = ('created_at', 'modified_at', 'abid_info')
-    # fields = [*readonly_fields]
-    
-    change_actions = ("regenerate_abid",)
-    # changelist_actions = ("regenerate_abid",)
-
-    def _get_obj_does_not_exist_redirect(self, request, opts, object_id):
+    def _get_config_options(self):
+        """Get available config options from plugins."""
         try:
-            object_pk = self.model.id_from_abid(object_id)
-            return redirect(self.request.path.replace(object_id, object_pk), permanent=False)
-        except (self.model.DoesNotExist, ValidationError):
-            pass
-        return super()._get_obj_does_not_exist_redirect(request, opts, object_id)       # type: ignore
-    
-    def queryset(self, request):
-        self.request = request
-        return super().queryset(request)                                                # type: ignore
-    
-    def change_view(self, request, object_id, form_url="", extra_context=None):
-        self.request = request
-        return super().change_view(request, object_id, form_url, extra_context)
+            from archivebox.hooks import discover_plugin_configs
+            plugin_configs = discover_plugin_configs()
+            options = {}
+            for plugin_name, schema in plugin_configs.items():
+                for key, prop in schema.get('properties', {}).items():
+                    options[key] = {
+                        'plugin': plugin_name,
+                        'type': prop.get('type', 'string'),
+                        'default': prop.get('default', ''),
+                        'description': prop.get('description', ''),
+                    }
+            return options
+        except Exception:
+            return {}
+
+    def render(self, name, value, attrs=None, renderer=None):
+        # Parse JSON value to dict
+        if value is None:
+            data = {}
+        elif isinstance(value, str):
+            try:
+                data = json.loads(value) if value else {}
+            except json.JSONDecodeError:
+                data = {}
+        elif isinstance(value, dict):
+            data = value
+        else:
+            data = {}
+
+        widget_id = attrs.get('id', name) if attrs else name
+        config_options = self._get_config_options()
+
+        # Build datalist options
+        datalist_options = '\n'.join(
+            f'<option value="{self._escape(key)}">{self._escape(opt["description"][:60] or opt["type"])}</option>'
+            for key, opt in sorted(config_options.items())
+        )
+
+        # Build config metadata as JSON for JS
+        config_meta_json = json.dumps(config_options)
+
+        html = f'''
+        <div id="{widget_id}_container" class="key-value-editor" style="max-width: 700px;">
+            <datalist id="{widget_id}_keys">
+                {datalist_options}
+            </datalist>
+            <div id="{widget_id}_rows" class="key-value-rows">
+        '''
+
+        # Render existing key-value pairs
+        row_idx = 0
+        for key, val in data.items():
+            val_str = json.dumps(val) if not isinstance(val, str) else val
+            html += self._render_row(widget_id, row_idx, key, val_str)
+            row_idx += 1
+
+        # Always add one empty row for new entries
+        html += self._render_row(widget_id, row_idx, '', '')
+
+        html += f'''
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center; margin-top: 8px;">
+                <button type="button" onclick="addKeyValueRow_{widget_id}()"
+                        style="padding: 4px 12px; cursor: pointer; background: #417690; color: white; border: none; border-radius: 4px;">
+                    + Add Row
+                </button>
+                <span id="{widget_id}_hint" style="font-size: 11px; color: #666; font-style: italic;"></span>
+            </div>
+            <input type="hidden" name="{name}" id="{widget_id}" value="">
+            <script>
+                (function() {{
+                    var configMeta_{widget_id} = {config_meta_json};
+
+                    function showKeyHint_{widget_id}(key) {{
+                        var hint = document.getElementById('{widget_id}_hint');
+                        var meta = configMeta_{widget_id}[key];
+                        if (meta) {{
+                            hint.innerHTML = '<b>' + key + '</b>: ' + (meta.description || meta.type) +
+                                (meta.default !== '' ? ' <span style="color:#888">(default: ' + meta.default + ')</span>' : '');
+                        }} else {{
+                            hint.textContent = key ? 'Custom key: ' + key : '';
+                        }}
+                    }}
+
+                    function updateHiddenField_{widget_id}() {{
+                        var container = document.getElementById('{widget_id}_rows');
+                        var rows = container.querySelectorAll('.key-value-row');
+                        var result = {{}};
+                        rows.forEach(function(row) {{
+                            var keyInput = row.querySelector('.kv-key');
+                            var valInput = row.querySelector('.kv-value');
+                            if (keyInput && valInput && keyInput.value.trim()) {{
+                                var key = keyInput.value.trim();
+                                var val = valInput.value.trim();
+                                // Try to parse as JSON (for booleans, numbers, etc)
+                                try {{
+                                    if (val === 'true') result[key] = true;
+                                    else if (val === 'false') result[key] = false;
+                                    else if (val === 'null') result[key] = null;
+                                    else if (!isNaN(val) && val !== '') result[key] = Number(val);
+                                    else if ((val.startsWith('{{') && val.endsWith('}}')) ||
+                                             (val.startsWith('[') && val.endsWith(']')) ||
+                                             (val.startsWith('"') && val.endsWith('"')))
+                                        result[key] = JSON.parse(val);
+                                    else result[key] = val;
+                                }} catch(e) {{
+                                    result[key] = val;
+                                }}
+                            }}
+                        }});
+                        document.getElementById('{widget_id}').value = JSON.stringify(result);
+                    }}
+
+                    window.addKeyValueRow_{widget_id} = function() {{
+                        var container = document.getElementById('{widget_id}_rows');
+                        var rows = container.querySelectorAll('.key-value-row');
+                        var newIdx = rows.length;
+                        var newRow = document.createElement('div');
+                        newRow.className = 'key-value-row';
+                        newRow.style.cssText = 'display: flex; gap: 8px; margin-bottom: 6px; align-items: center;';
+                        newRow.innerHTML = '<input type="text" class="kv-key" placeholder="KEY" list="{widget_id}_keys" ' +
+                            'style="flex: 1; padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px; font-family: monospace; font-size: 12px;" ' +
+                            'onchange="updateHiddenField_{widget_id}()" oninput="updateHiddenField_{widget_id}(); showKeyHint_{widget_id}(this.value)" onfocus="showKeyHint_{widget_id}(this.value)">' +
+                            '<input type="text" class="kv-value" placeholder="value" ' +
+                            'style="flex: 2; padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px; font-family: monospace; font-size: 12px;" ' +
+                            'onchange="updateHiddenField_{widget_id}()" oninput="updateHiddenField_{widget_id}()">' +
+                            '<button type="button" onclick="removeKeyValueRow_{widget_id}(this)" ' +
+                            'style="padding: 4px 10px; cursor: pointer; background: #ba2121; color: white; border: none; border-radius: 4px; font-weight: bold;">−</button>';
+                        container.appendChild(newRow);
+                        newRow.querySelector('.kv-key').focus();
+                    }};
+
+                    window.removeKeyValueRow_{widget_id} = function(btn) {{
+                        var row = btn.parentElement;
+                        row.remove();
+                        updateHiddenField_{widget_id}();
+                    }};
+
+                    window.showKeyHint_{widget_id} = showKeyHint_{widget_id};
+                    window.updateHiddenField_{widget_id} = updateHiddenField_{widget_id};
+
+                    // Initialize on load
+                    document.addEventListener('DOMContentLoaded', function() {{
+                        updateHiddenField_{widget_id}();
+                    }});
+                    // Also run immediately in case DOM is already ready
+                    if (document.readyState !== 'loading') {{
+                        updateHiddenField_{widget_id}();
+                    }}
+
+                    // Update on any input change
+                    document.getElementById('{widget_id}_rows').addEventListener('input', updateHiddenField_{widget_id});
+                }})();
+            </script>
+        </div>
+        '''
+        return mark_safe(html)
+
+    def _render_row(self, widget_id, idx, key, value):
+        return f'''
+            <div class="key-value-row" style="display: flex; gap: 8px; margin-bottom: 6px; align-items: center;">
+                <input type="text" class="kv-key" value="{self._escape(key)}" placeholder="KEY" list="{widget_id}_keys"
+                       style="flex: 1; padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px; font-family: monospace; font-size: 12px;"
+                       onchange="updateHiddenField_{widget_id}()" oninput="updateHiddenField_{widget_id}(); showKeyHint_{widget_id}(this.value)" onfocus="showKeyHint_{widget_id}(this.value)">
+                <input type="text" class="kv-value" value="{self._escape(value)}" placeholder="value"
+                       style="flex: 2; padding: 6px 8px; border: 1px solid #ccc; border-radius: 4px; font-family: monospace; font-size: 12px;"
+                       onchange="updateHiddenField_{widget_id}()" oninput="updateHiddenField_{widget_id}()">
+                <button type="button" onclick="removeKeyValueRow_{widget_id}(this)"
+                        style="padding: 4px 10px; cursor: pointer; background: #ba2121; color: white; border: none; border-radius: 4px; font-weight: bold;">−</button>
+            </div>
+        '''
+
+    def _escape(self, s):
+        """Escape HTML special chars in attribute values."""
+        if not s:
+            return ''
+        return str(s).replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;').replace('"', '&quot;')
+
+    def value_from_datadict(self, data, files, name):
+        value = data.get(name, '{}')
+        return value
+
+
+class ConfigEditorMixin:
+    """
+    Mixin for admin classes with a config JSON field.
+
+    Provides a key-value editor widget with autocomplete for available config keys.
+    """
+
+    def formfield_for_dbfield(self, db_field, request, **kwargs):
+        """Use KeyValueWidget for the config JSON field."""
+        if db_field.name == 'config':
+            kwargs['widget'] = KeyValueWidget()
+        return super().formfield_for_dbfield(db_field, request, **kwargs)
+
+
+class BaseModelAdmin(DjangoObjectActions, admin.ModelAdmin):
+    list_display = ('id', 'created_at', 'created_by')
+    readonly_fields = ('id', 'created_at', 'modified_at')
 
     def get_form(self, request, obj=None, **kwargs):
-        self.request = request
         form = super().get_form(request, obj, **kwargs)
         if 'created_by' in form.base_fields:
             form.base_fields['created_by'].initial = request.user
-            
-        if obj:
-            if obj.ABID_FRESH_DIFFS:
-                messages.warning(request, "The ABID is not in sync with the object! See the API Identifiers section below for more info...")
-
         return form
-
-    def get_formset(self, request, formset=None, obj=None, **kwargs):
-        formset = super().get_formset(request, formset, obj, **kwargs)                  # type: ignore
-        formset.form.base_fields['created_at'].disabled = True
-        
-        return formset
-
-    def save_model(self, request, obj, form, change):
-        self.request = request
-
-        old_abid = getattr(obj, '_previous_abid', None) or obj.abid
-
-        super().save_model(request, obj, form, change)
-        obj.refresh_from_db()
-
-        new_abid = obj.abid
-        if new_abid != old_abid:
-            messages.warning(request, f"The object's ABID has been updated! {old_abid} -> {new_abid} (any external references to the old ABID will need to be updated manually)")
-        # import ipdb; ipdb.set_trace()
-
-    @admin.display(description='API Identifiers')
-    def abid_info(self, obj):
-        return get_abid_info(self, obj, request=self.request)
-
-    @action(label="Regenerate ABID", description="Re-Generate the ABID based on fresh values")
-    def regenerate_abid(self, request, obj):
-        old_abid = str(obj.abid)
-        obj.abid = obj.issue_new_abid(overwrite=True)
-        obj.save()
-        obj.refresh_from_db()
-        new_abid = str(obj.abid)
-
-        if new_abid != old_abid:
-            messages.warning(request, f"The object's ABID has been updated! {old_abid} -> {new_abid} (any external references to the old ABID will need to be updated manually)")
-        else:
-            messages.success(request, "The ABID was not regenerated, it is already up-to-date with the object.")

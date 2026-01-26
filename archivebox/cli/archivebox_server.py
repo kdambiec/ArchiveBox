@@ -3,6 +3,9 @@
 __package__ = 'archivebox.cli'
 
 from typing import Iterable
+import os
+import sys
+import subprocess
 
 import rich_click as click
 from rich import print
@@ -30,10 +33,13 @@ def server(runserver_args: Iterable[str]=(SERVER_CONFIG.BIND_ADDR,),
     from archivebox.misc.checks import check_data_folder
     check_data_folder()
 
-    from django.core.management import call_command
-    from django.contrib.auth.models import User
-    
     from archivebox.config.common import SHELL_CONFIG
+
+    run_in_debug = SHELL_CONFIG.DEBUG or debug or reload
+    if debug or reload:
+        SHELL_CONFIG.DEBUG = True
+
+    from django.contrib.auth.models import User
     
     if not User.objects.filter(is_superuser=True).exclude(username='system').exists():
         print()
@@ -56,20 +62,85 @@ def server(runserver_args: Iterable[str]=(SERVER_CONFIG.BIND_ADDR,),
     except IndexError:
         pass
 
-    print('[green][+] Starting ArchiveBox webserver...[/green]')
-    print(f'    [blink][green]>[/green][/blink] Starting ArchiveBox webserver on [deep_sky_blue4][link=http://{host}:{port}]http://{host}:{port}[/link][/deep_sky_blue4]')
-    print(f'    [green]>[/green] Log in to ArchiveBox Admin UI on [deep_sky_blue3][link=http://{host}:{port}/admin]http://{host}:{port}/admin[/link][/deep_sky_blue3]')
-    print('    > Writing ArchiveBox error log to ./logs/errors.log')
+    if run_in_debug:
+        os.environ['ARCHIVEBOX_RUNSERVER'] = '1'
+        if reload:
+            os.environ['ARCHIVEBOX_AUTORELOAD'] = '1'
+            os.environ['ARCHIVEBOX_ORCHESTRATOR_MANAGED_BY_WATCHER'] = '1'
+            from archivebox.config.common import STORAGE_CONFIG
+            pidfile = str(STORAGE_CONFIG.TMP_DIR / 'runserver.pid')
+            os.environ['ARCHIVEBOX_RUNSERVER_PIDFILE'] = pidfile
 
-    if SHELL_CONFIG.DEBUG:
+            from django.utils.autoreload import DJANGO_AUTORELOAD_ENV
+            is_reloader_child = os.environ.get(DJANGO_AUTORELOAD_ENV) == 'true'
+            if not is_reloader_child:
+                env = os.environ.copy()
+                env['ARCHIVEBOX_ORCHESTRATOR_WATCHER'] = '1'
+                subprocess.Popen(
+                    [sys.executable, '-m', 'archivebox', 'manage', 'orchestrator_watch', f'--pidfile={pidfile}'],
+                    env=env,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+
+        from django.core.management import call_command
+        print('[green][+] Starting ArchiveBox webserver in DEBUG mode...[/green]')
+        print(f'    [blink][green]>[/green][/blink] Starting ArchiveBox webserver on [deep_sky_blue4][link=http://{host}:{port}]http://{host}:{port}[/link][/deep_sky_blue4]')
+        print(f'    [green]>[/green] Log in to ArchiveBox Admin UI on [deep_sky_blue3][link=http://{host}:{port}/admin]http://{host}:{port}/admin[/link][/deep_sky_blue3]')
+        print('    > Writing ArchiveBox error log to ./logs/errors.log')
         if not reload:
             runserver_args.append('--noreload')  # '--insecure'
         if nothreading:
             runserver_args.append('--nothreading')
         call_command("runserver", *runserver_args)
     else:
-        from workers.supervisord_util import start_server_workers
+        from archivebox.workers.supervisord_util import (
+            get_existing_supervisord_process,
+            get_worker,
+            start_server_workers,
+            tail_multiple_worker_logs,
+            is_port_in_use,
+        )
+        from archivebox.workers.orchestrator import Orchestrator
 
+        # Check if port is already in use
+        if is_port_in_use(host, int(port)):
+            print(f'[red][X] Error: Port {port} is already in use[/red]')
+            print(f'    Another process (possibly daphne) is already listening on {host}:{port}')
+            print(f'    Stop the conflicting process or choose a different port')
+            sys.exit(1)
+
+        # Check if orchestrator is already running for this data directory
+        if Orchestrator.is_running():
+            print(f'[red][X] Error: ArchiveBox orchestrator is already running for this data directory[/red]')
+            print(f'    Stop the existing orchestrator before starting a new server')
+            print(f'    To stop: pkill -f "archivebox manage orchestrator"')
+            sys.exit(1)
+
+        # Check if supervisord is already running
+        supervisor = get_existing_supervisord_process()
+        if supervisor:
+            daphne_proc = get_worker(supervisor, 'worker_daphne')
+
+            # If daphne is already running, error out
+            if daphne_proc and daphne_proc.get('statename') == 'RUNNING':
+                orchestrator_proc = get_worker(supervisor, 'worker_orchestrator')
+                print('[red][X] Error: ArchiveBox server is already running[/red]')
+                print(f'    [green]√[/green] Web server (worker_daphne) is RUNNING on [deep_sky_blue4][link=http://{host}:{port}]http://{host}:{port}[/link][/deep_sky_blue4]')
+                if orchestrator_proc and orchestrator_proc.get('statename') == 'RUNNING':
+                    print(f'    [green]√[/green] Background worker (worker_orchestrator) is RUNNING')
+                print()
+                print('[yellow]To stop the existing server, run:[/yellow]')
+                print('    pkill -f "archivebox server"')
+                print('    pkill -f supervisord')
+                sys.exit(1)
+            # Otherwise, daphne is not running - fall through to start it
+
+        # No existing workers found - start new ones
+        print('[green][+] Starting ArchiveBox webserver...[/green]')
+        print(f'    [blink][green]>[/green][/blink] Starting ArchiveBox webserver on [deep_sky_blue4][link=http://{host}:{port}]http://{host}:{port}[/link][/deep_sky_blue4]')
+        print(f'    [green]>[/green] Log in to ArchiveBox Admin UI on [deep_sky_blue3][link=http://{host}:{port}/admin]http://{host}:{port}/admin[/link][/deep_sky_blue3]')
+        print('    > Writing ArchiveBox error log to ./logs/errors.log')
         print()
         start_server_workers(host=host, port=port, daemonize=daemonize)
         print("\n[i][green][🟩] ArchiveBox server shut down gracefully.[/green][/i]")

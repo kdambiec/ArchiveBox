@@ -12,7 +12,7 @@ class ArchiveBoxAdmin(admin.AdminSite):
 
 
 archivebox_admin = ArchiveBoxAdmin()
-archivebox_admin.disable_action('delete_selected')
+# Note: delete_selected is enabled per-model via actions = ['delete_selected'] in each ModelAdmin
 # TODO: https://stackoverflow.com/questions/40760880/add-custom-button-to-django-admin-panel
 
 
@@ -35,8 +35,19 @@ def register_admin_site():
 
     admin.site = archivebox_admin
     sites.site = archivebox_admin
-    
-    # register all plugins admin classes
-    archivebox.pm.hook.register_admin(admin_site=archivebox_admin)
-    
+
+    # Register admin views for each app
+    # (Previously handled by ABX plugin system, now called directly)
+    from archivebox.core.admin import register_admin as register_core_admin
+    from archivebox.crawls.admin import register_admin as register_crawls_admin
+    from archivebox.api.admin import register_admin as register_api_admin
+    from archivebox.machine.admin import register_admin as register_machine_admin
+    from archivebox.workers.admin import register_admin as register_workers_admin
+
+    register_core_admin(archivebox_admin)
+    register_crawls_admin(archivebox_admin)
+    register_api_admin(archivebox_admin)
+    register_machine_admin(archivebox_admin)
+    register_workers_admin(archivebox_admin)
+
     return archivebox_admin

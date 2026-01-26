@@ -3,94 +3,62 @@ __package__ = 'archivebox.api'
 from uuid import UUID
 from typing import List
 from datetime import datetime
+from django.utils import timezone
 
 from django.db.models import Q
 from django.contrib.auth import get_user_model
 
 from ninja import Router, Schema
+from ninja.errors import HttpError
 
-from core.models import Snapshot
-from crawls.models import Seed, Crawl
+from archivebox.core.models import Snapshot
+from archivebox.crawls.models import Crawl
 
 from .auth import API_AUTH_METHODS
 
 router = Router(tags=['Crawl Models'], auth=API_AUTH_METHODS)
 
 
-class SeedSchema(Schema):
-    TYPE: str = 'crawls.models.Seed'
-
-    id: UUID
-    abid: str
-    
-    modified_at: datetime
-    created_at: datetime
-    created_by_id: str
-    created_by_username: str
-    
-    uri: str
-    tags_str: str
-    config: dict
-    
-    @staticmethod
-    def resolve_created_by_id(obj):
-        return str(obj.created_by_id)
-    
-    @staticmethod
-    def resolve_created_by_username(obj):
-        User = get_user_model()
-        return User.objects.get(id=obj.created_by_id).username
-    
-@router.get("/seeds", response=List[SeedSchema], url_name="get_seeds")
-def get_seeds(request):
-    return Seed.objects.all().distinct()
-
-@router.get("/seed/{seed_id}", response=SeedSchema, url_name="get_seed")
-def get_seed(request, seed_id: str):
-    seed = None
-    request.with_snapshots = False
-    request.with_archiveresults = False
-    
-    try:
-        seed = Seed.objects.get(Q(abid__icontains=seed_id) | Q(id__icontains=seed_id))
-    except Exception:
-        pass
-    return seed
-
-
 class CrawlSchema(Schema):
     TYPE: str = 'crawls.models.Crawl'
 
     id: UUID
-    abid: str
 
     modified_at: datetime
     created_at: datetime
     created_by_id: str
     created_by_username: str
-    
+
     status: str
     retry_at: datetime | None
 
-    seed: SeedSchema
+    urls: str
+    extractor: str
     max_depth: int
-    
+    tags_str: str
+    config: dict
+
     # snapshots: List[SnapshotSchema]
 
     @staticmethod
     def resolve_created_by_id(obj):
         return str(obj.created_by_id)
-    
+
     @staticmethod
     def resolve_created_by_username(obj):
         User = get_user_model()
         return User.objects.get(id=obj.created_by_id).username
-    
+
     @staticmethod
     def resolve_snapshots(obj, context):
         if context['request'].with_snapshots:
             return obj.snapshot_set.all().distinct()
         return Snapshot.objects.none()
+
+
+class CrawlUpdateSchema(Schema):
+    status: str | None = None
+    retry_at: datetime | None = None
 
 
 @router.get("/crawls", response=List[CrawlSchema], url_name="get_crawls")
@@ -99,21 +67,10 @@ def get_crawls(request):
 
 @router.get("/crawl/{crawl_id}", response=CrawlSchema | str, url_name="get_crawl")
 def get_crawl(request, crawl_id: str, as_rss: bool=False, with_snapshots: bool=False, with_archiveresults: bool=False):
-    """Get a specific Crawl by id or abid."""
-    
-    crawl = None
+    """Get a specific Crawl by id."""
     request.with_snapshots = with_snapshots
     request.with_archiveresults = with_archiveresults
-    
-    try:
-        crawl = Crawl.objects.get(abid__icontains=crawl_id)
-    except Exception:
-        pass
-
-    try:
-        crawl = crawl or Crawl.objects.get(id__icontains=crawl_id)
-    except Exception:
-        pass
+    crawl = Crawl.objects.get(id__icontains=crawl_id)
     
     if crawl and as_rss:
         # return snapshots as XML rss feed
@@ -129,3 +86,32 @@ def get_crawl(request, crawl_id: str, as_rss: bool=False, with_snapshots: bool=F
     
     return crawl
 
+
+@router.patch("/crawl/{crawl_id}", response=CrawlSchema, url_name="patch_crawl")
+def patch_crawl(request, crawl_id: str, data: CrawlUpdateSchema):
+    """Update a crawl (e.g., set status=sealed to cancel queued work)."""
+    crawl = Crawl.objects.get(id__icontains=crawl_id)
+    payload = data.dict(exclude_unset=True)
+
+    if 'status' in payload:
+        if payload['status'] not in Crawl.StatusChoices.values:
+            raise HttpError(400, f'Invalid status: {payload["status"]}')
+        crawl.status = payload['status']
+        if crawl.status == Crawl.StatusChoices.SEALED and 'retry_at' not in payload:
+            crawl.retry_at = None
+
+    if 'retry_at' in payload:
+        crawl.retry_at = payload['retry_at']
+
+    crawl.save(update_fields=['status', 'retry_at', 'modified_at'])
+
+    if payload.get('status') == Crawl.StatusChoices.SEALED:
+        Snapshot.objects.filter(
+            crawl=crawl,
+            status__in=[Snapshot.StatusChoices.QUEUED, Snapshot.StatusChoices.STARTED],
+        ).update(
+            status=Snapshot.StatusChoices.SEALED,
+            retry_at=None,
+            modified_at=timezone.now(),
+        )
+    return crawl

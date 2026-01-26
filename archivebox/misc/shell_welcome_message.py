@@ -13,7 +13,6 @@ import pydantic                            # noqa
 import requests                            # noqa
 import subprocess                          # noqa
 import archivebox                          # noqa
-import abx                                 # noqa
 from benedict import benedict              # noqa
 from django.utils import timezone          # noqa
 from datetime import datetime, timedelta   # noqa
@@ -21,8 +20,9 @@ from django.conf import settings           # noqa
 
 from archivebox import CONSTANTS           # noqa
 from archivebox.cli import *               # noqa
+from archivebox.config.configset import get_config
 
-CONFIG = archivebox.pm.hook.get_FLAT_CONFIG()
+CONFIG = get_config()
 
 if __name__ == '__main__':
     # load the rich extension for ipython for pretty printing
@@ -35,7 +35,7 @@ if __name__ == '__main__':
 
 
     # print the welcome message
-    prnt('[green]import re, os, sys, psutil, subprocess, reqiests, json, pydantic, benedict, django, abx[/]')
+    prnt('[green]import re, os, sys, psutil, subprocess, requests, json, pydantic, benedict, django[/]')
     prnt('[yellow4]# ArchiveBox Imports[/]')
     prnt('[yellow4]import archivebox[/]')
     prnt('[yellow4]from archivebox.cli import *[/]')
@@ -53,5 +53,5 @@ if __name__ == '__main__':
     prnt('    add[blink][deep_sky_blue4]?[/deep_sky_blue4][/blink]                                                                        [grey53]# add ? after anything to get help[/]')
     prnt('    add("https://example.com/some/new/url")                                     [grey53]# call CLI methods from the shell[/]')
     prnt('    snap = Snapshot.objects.filter(url__contains="https://example.com").last()  [grey53]# query for individual snapshots[/]')
-    prnt('    snap.archiveresult_set.all()                                                [grey53]# see extractor results[/]')
+    prnt('    snap.archiveresult_set.all()                                                [grey53]# see extractor plugin results[/]')
     prnt('    bool(re.compile(CONFIG.URL_DENYLIST).search("https://example.com/abc.exe")) [grey53]# test out a config change[/]')

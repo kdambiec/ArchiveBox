@@ -5,13 +5,17 @@ from django.contrib.auth.admin import UserAdmin
 from django.utils.html import format_html, mark_safe
 from django.contrib.auth import get_user_model
 
-import abx
-
 
 class CustomUserAdmin(UserAdmin):
     sort_fields = ['id', 'email', 'username', 'is_superuser', 'last_login', 'date_joined']
     list_display = ['username', 'id', 'email', 'is_superuser', 'last_login', 'date_joined']
     readonly_fields = ('snapshot_set', 'archiveresult_set', 'tag_set', 'apitoken_set', 'outboundwebhook_set')
+
+    # Preserve Django's default user creation form and fieldsets
+    # This ensures passwords are properly hashed and permissions are set correctly
+    add_fieldsets = UserAdmin.add_fieldsets
+
+    # Extend fieldsets for change form only (not user creation)
     fieldsets = [*UserAdmin.fieldsets, ('Data', {'fields': readonly_fields})]
 
     @admin.display(description='Snapshots')
@@ -21,7 +25,7 @@ class CustomUserAdmin(UserAdmin):
             format_html(
                 '<code><a href="/admin/core/snapshot/{}/change"><b>[{}]</b></a></code> <b>📅 {}</b> {}',
                 snap.pk,
-                snap.abid,
+                str(snap.id)[:8],
                 snap.downloaded_at.strftime('%Y-%m-%d %H:%M') if snap.downloaded_at else 'pending...',
                 snap.url[:64],
             )
@@ -35,7 +39,7 @@ class CustomUserAdmin(UserAdmin):
             format_html(
                 '<code><a href="/admin/core/archiveresult/{}/change"><b>[{}]</b></a></code> <b>📅 {}</b> <b>📄 {}</b> {}',
                 result.pk,
-                result.abid,
+                str(result.id)[:8],
                 result.snapshot.downloaded_at.strftime('%Y-%m-%d %H:%M') if result.snapshot.downloaded_at else 'pending...',
                 result.extractor,
                 result.snapshot.url[:64],
@@ -62,7 +66,7 @@ class CustomUserAdmin(UserAdmin):
             format_html(
                 '<code><a href="/admin/api/apitoken/{}/change"><b>[{}]</b></a></code> {} (expires {})',
                 apitoken.pk,
-                apitoken.abid,
+                str(apitoken.id)[:8],
                 apitoken.token_redacted[:64],
                 apitoken.expires,
             )
@@ -76,7 +80,7 @@ class CustomUserAdmin(UserAdmin):
             format_html(
                 '<code><a href="/admin/api/outboundwebhook/{}/change"><b>[{}]</b></a></code> {} -> {}',
                 outboundwebhook.pk,
-                outboundwebhook.abid,
+                str(outboundwebhook.id)[:8],
                 outboundwebhook.referenced_model,
                 outboundwebhook.endpoint,
             )
@@ -86,6 +90,5 @@ class CustomUserAdmin(UserAdmin):
 
 
 
-@abx.hookimpl
 def register_admin(admin_site):
     admin_site.register(get_user_model(), CustomUserAdmin)

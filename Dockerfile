@@ -1,5 +1,5 @@
 # This is the Dockerfile for ArchiveBox, it bundles the following main dependencies:
-#     python3.11, pip, pipx, uv, python3-ldap
+#     python3.14, pip, pipx, uv, python3-ldap
 #     curl, wget, git, dig, ping, tree, nano
 #     node, npm, single-file, readability-extractor, postlight-parser
 #     ArchiveBox, yt-dlp, playwright, chromium
@@ -20,7 +20,7 @@
 
 ### Example: Using ArchiveBox in your own project's Dockerfile ########
 
-# FROM python:3.12-slim
+# FROM python:3.14-slim
 # WORKDIR /data
 # RUN pip install archivebox>=0.8.5rc51   # use latest release here
 # RUN archivebox install
@@ -393,7 +393,7 @@ VOLUME "$DATA_DIR"
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=20s --retries=15 \
-    CMD curl --silent 'http://localhost:8000/health/' | grep -q 'OK'
+    CMD curl --silent 'http://admin.archivebox.localhost:8000/health/' | grep -q 'OK'
 
 ENTRYPOINT ["dumb-init", "--", "/app/bin/docker_entrypoint.sh"]
 CMD ["archivebox", "server", "--quick-init", "0.0.0.0:8000"]

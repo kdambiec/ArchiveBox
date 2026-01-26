@@ -21,35 +21,52 @@ class ArchiveBoxGroup(click.Group):
     meta_commands = {
         'help': 'archivebox.cli.archivebox_help.main',
         'version': 'archivebox.cli.archivebox_version.main',
+        'mcp': 'archivebox.cli.archivebox_mcp.main',
     }
     setup_commands = {
         'init': 'archivebox.cli.archivebox_init.main',
         'install': 'archivebox.cli.archivebox_install.main',
     }
+    # Model commands (CRUD operations via subcommands)
+    model_commands = {
+        'crawl': 'archivebox.cli.archivebox_crawl.main',
+        'snapshot': 'archivebox.cli.archivebox_snapshot.main',
+        'archiveresult': 'archivebox.cli.archivebox_archiveresult.main',
+        'tag': 'archivebox.cli.archivebox_tag.main',
+        'binary': 'archivebox.cli.archivebox_binary.main',
+        'process': 'archivebox.cli.archivebox_process.main',
+        'machine': 'archivebox.cli.archivebox_machine.main',
+        'persona': 'archivebox.cli.archivebox_persona.main',
+    }
     archive_commands = {
+        # High-level commands
         'add': 'archivebox.cli.archivebox_add.main',
         'remove': 'archivebox.cli.archivebox_remove.main',
+        'run': 'archivebox.cli.archivebox_run.main',
         'update': 'archivebox.cli.archivebox_update.main',
-        'search': 'archivebox.cli.archivebox_search.main',
         'status': 'archivebox.cli.archivebox_status.main',
+        'search': 'archivebox.cli.archivebox_search.main',
         'config': 'archivebox.cli.archivebox_config.main',
         'schedule': 'archivebox.cli.archivebox_schedule.main',
         'server': 'archivebox.cli.archivebox_server.main',
         'shell': 'archivebox.cli.archivebox_shell.main',
         'manage': 'archivebox.cli.archivebox_manage.main',
-        'worker': 'archivebox.cli.archivebox_worker.main',
+        # Introspection commands
+        'pluginmap': 'archivebox.cli.archivebox_pluginmap.main',
     }
     all_subcommands = {
         **meta_commands,
         **setup_commands,
+        **model_commands,
         **archive_commands,
     }
     renamed_commands = {
         'setup': 'install',
-        'list': 'search',
         'import': 'add',
         'archive': 'add',
-        'export': 'search',
+        # Old commands replaced by new model commands
+        'orchestrator': 'run',
+        'extract': 'archiveresult',
     }
     
     @classmethod
@@ -103,9 +120,9 @@ def cli(ctx, help=False):
     if help or ctx.invoked_subcommand is None:
         ctx.invoke(ctx.command.get_command(ctx, 'help'))
     
-    # if the subcommand is in the archive_commands dict and is not 'manage',
+    # if the subcommand is in archive_commands or model_commands,
     # then we need to set up the django environment and check that we're in a valid data folder
-    if subcommand in ArchiveBoxGroup.archive_commands:
+    if subcommand in ArchiveBoxGroup.archive_commands or subcommand in ArchiveBoxGroup.model_commands:
         # print('SETUP DJANGO AND CHECK DATA FOLDER')
         try:
             from archivebox.config.django import setup_django
@@ -118,11 +135,14 @@ def cli(ctx, help=False):
                 raise
             
 
-def main(args=None, prog_name=None):
+def main(args=None, prog_name=None, stdin=None):
     # show `docker run archivebox xyz` in help messages if running in docker
     IN_DOCKER = os.environ.get('IN_DOCKER', False) in ('1', 'true', 'True', 'TRUE', 'yes')
     IS_TTY = sys.stdin.isatty()
     prog_name = prog_name or (f'docker compose run{"" if IS_TTY else " -T"} archivebox' if IN_DOCKER else 'archivebox')
+    
+    # stdin param allows passing input data from caller (used by __main__.py)
+    # currently not used by click-based CLI, but kept for backwards compatibility
 
     try:
         cli(args=args, prog_name=prog_name)

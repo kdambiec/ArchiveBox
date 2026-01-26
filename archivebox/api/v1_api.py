@@ -15,7 +15,7 @@ from ninja import NinjaAPI, Swagger
 from archivebox.config import VERSION
 from archivebox.config.version import get_COMMIT_HASH
 
-from api.auth import API_AUTH_METHODS
+from archivebox.api.auth import API_AUTH_METHODS
 
 
 COMMIT_HASH = get_COMMIT_HASH() or 'unknown'
@@ -37,11 +37,12 @@ html_description=f'''
 
 
 def register_urls(api: NinjaAPI) -> NinjaAPI:
-    # api.add_router('/auth/',     'api.v1_auth.router')
-    api.add_router('/core/',     'api.v1_core.router')
-    api.add_router('/crawls/',   'api.v1_crawls.router')
-    api.add_router('/cli/',      'api.v1_cli.router')
-    api.add_router('/workers/',  'api.v1_workers.router')
+    # api.add_router('/auth/',     'archivebox.api.v1_auth.router')
+    api.add_router('/core/',     'archivebox.api.v1_core.router')
+    api.add_router('/crawls/',   'archivebox.api.v1_crawls.router')
+    api.add_router('/cli/',      'archivebox.api.v1_cli.router')
+    api.add_router('/workers/',  'archivebox.api.v1_workers.router')
+    api.add_router('/machine/',  'archivebox.api.v1_machine.router')
     return api
 
 
@@ -70,7 +71,7 @@ class NinjaAPIWithIOCapture(NinjaAPI):
 
         response['X-ArchiveBox-Auth-Method'] = getattr(request, '_api_auth_method', None) or 'None'
         response['X-ArchiveBox-Auth-Expires'] = token_expiry
-        response['X-ArchiveBox-Auth-Token-Id'] = api_token.abid if api_token else 'None'
+        response['X-ArchiveBox-Auth-Token-Id'] = str(api_token.id) if api_token else 'None'
         response['X-ArchiveBox-Auth-User-Id'] = request.user.pk if request.user.pk else 'None'
         response['X-ArchiveBox-Auth-User-Username'] = request.user.username if request.user.pk else 'None'
 
@@ -84,7 +85,6 @@ api = NinjaAPIWithIOCapture(
     title='ArchiveBox API',
     description=html_description,
     version=VERSION,
-    csrf=False,
     auth=API_AUTH_METHODS,
     urls_namespace="api-1",
     docs=Swagger(settings={"persistAuthorization": True}),

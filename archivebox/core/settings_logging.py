@@ -2,8 +2,6 @@ __package__ = 'archivebox.core'
 
 import re
 import os
-
-import shutil
 import tempfile
 import logging
 
@@ -11,7 +9,6 @@ import pydantic
 import django.template
 
 from archivebox.config import CONSTANTS
-from archivebox.misc.logging import IS_TTY
 
 
 IGNORABLE_URL_PATTERNS = [
@@ -51,6 +48,19 @@ class CustomOutboundWebhookLogFormatter(logging.Formatter):
         result = super().format(record)
         return result.replace('HTTP Request: ', 'OutboundWebhook: ')
 
+class StripANSIColorCodesFilter(logging.Filter):
+    _ansi_re = re.compile(r'\x1b\[[0-9;]*m')
+    _bare_re = re.compile(r'\[[0-9;]*m')
+
+    def filter(self, record) -> bool:
+        msg = record.getMessage()
+        if isinstance(msg, str) and ('\x1b[' in msg or '[m' in msg):
+            msg = self._ansi_re.sub('', msg)
+            msg = self._bare_re.sub('', msg)
+            record.msg = msg
+            record.args = ()
+        return True
+
 
 ERROR_LOG = tempfile.NamedTemporaryFile().name
 
@@ -79,7 +89,6 @@ SETTINGS_LOGGING = {
     "formatters": {
         "rich": {
             "datefmt": "[%Y-%m-%d %H:%M:%S]",
-            # "format": "{asctime} {levelname} {module} {name} {message} {username}",
             "format": "%(name)s %(message)s",
         },
         "outbound_webhooks": {
@@ -91,6 +100,9 @@ SETTINGS_LOGGING = {
         "noisyrequestsfilter": {
             "()": NoisyRequestsFilter,
         },
+        "stripansi": {
+            "()": StripANSIColorCodesFilter,
+        },
         "require_debug_false": {
             "()": "django.utils.log.RequireDebugFalse",
         },
@@ -99,26 +111,13 @@ SETTINGS_LOGGING = {
         },
     },
     "handlers": {
-        # "console": {
-        #     "level": "DEBUG",
-        #     'formatter': 'simple',
-        #     "class": "logging.StreamHandler",
-        #     'filters': ['noisyrequestsfilter', 'add_extra_logging_attrs'],
-        # },
         "default": {
             "class": "rich.logging.RichHandler",
             "formatter": "rich",
             "level": "DEBUG",
             "markup": False,
-            "rich_tracebacks": IS_TTY,
-            "filters": ["noisyrequestsfilter"],
-            "tracebacks_suppress": [
-                django,
-                pydantic,
-            ],
-            "tracebacks_width": shutil.get_terminal_size((100, 10)).columns - 1,
-            "tracebacks_word_wrap": False,
-            "tracebacks_show_locals": False,
+            "rich_tracebacks": False,  # Use standard Python tracebacks (no frame/box)
+            "filters": ["noisyrequestsfilter", "stripansi"],
         },
         "logfile": {
             "level": "INFO",
@@ -127,12 +126,12 @@ SETTINGS_LOGGING = {
             "maxBytes": 1024 * 1024 * 25,  # 25 MB
             "backupCount": 10,
             "formatter": "rich",
-            "filters": ["noisyrequestsfilter"],
+            "filters": ["noisyrequestsfilter", "stripansi"],
         },
         "outbound_webhooks": {
             "class": "rich.logging.RichHandler",
             "markup": False,
-            "rich_tracebacks": True,
+            "rich_tracebacks": False,  # Use standard Python tracebacks (no frame/box)
             "formatter": "outbound_webhooks",
         },
         # "mail_admins": {

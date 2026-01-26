@@ -3,12 +3,10 @@ __package__ = 'archivebox.core'
 from django.contrib import admin
 from django.utils.html import format_html, mark_safe
 
-import abx
-
 from archivebox.misc.paginators import AccelleratedPaginator
-from archivebox.base_models.admin import ABIDModelAdmin
+from archivebox.base_models.admin import BaseModelAdmin
 
-from core.models import Tag
+from archivebox.core.models import Tag
 
 
 class TagInline(admin.TabularInline):
@@ -47,16 +45,30 @@ class TagInline(admin.TabularInline):
 #         return format_html('<a href="/admin/{}/{}/{}/change"><b>[{}]</b></a>', obj._meta.app_label, obj._meta.model_name, obj.pk, str(obj))
 
     
-class TagAdmin(ABIDModelAdmin):
-    list_display = ('created_at', 'created_by', 'abid', 'name', 'num_snapshots', 'snapshots')
+class TagAdmin(BaseModelAdmin):
+    list_display = ('created_at', 'created_by', 'id', 'name', 'num_snapshots', 'snapshots')
     list_filter = ('created_at', 'created_by')
-    sort_fields = ('name', 'slug', 'abid', 'created_by', 'created_at')
-    readonly_fields = ('slug', 'abid', 'created_at', 'modified_at', 'abid_info', 'snapshots')
-    search_fields = ('abid', 'name', 'slug')
-    fields = ('name', 'created_by', *readonly_fields)
+    sort_fields = ('name', 'slug', 'id', 'created_by', 'created_at')
+    readonly_fields = ('slug', 'id', 'created_at', 'modified_at', 'snapshots')
+    search_fields = ('id', 'name', 'slug')
     actions = ['delete_selected', 'merge_tags']
     ordering = ['-created_at']
     # inlines = [TaggedItemInline]
+
+    fieldsets = (
+        ('Tag Info', {
+            'fields': ('name', 'slug'),
+            'classes': ('card',),
+        }),
+        ('Metadata', {
+            'fields': ('id', 'created_by', 'created_at', 'modified_at'),
+            'classes': ('card',),
+        }),
+        ('Snapshots', {
+            'fields': ('snapshots',),
+            'classes': ('card', 'wide'),
+        }),
+    )
 
     paginator = AccelleratedPaginator
 
@@ -150,7 +162,7 @@ class TagAdmin(ABIDModelAdmin):
 
 
 # @admin.register(SnapshotTag, site=archivebox_admin)
-# class SnapshotTagAdmin(ABIDModelAdmin):
+# class SnapshotTagAdmin(BaseModelAdmin):
 #     list_display = ('id', 'snapshot', 'tag')
 #     sort_fields = ('id', 'snapshot', 'tag')
 #     search_fields = ('id', 'snapshot_id', 'tag_id')
@@ -159,7 +171,6 @@ class TagAdmin(ABIDModelAdmin):
 #     ordering = ['-id']
 
 
-@abx.hookimpl
 def register_admin(admin_site):
     admin_site.register(Tag, TagAdmin)
 

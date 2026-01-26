@@ -13,7 +13,7 @@ from ninja.errors import HttpError
 
 
 def get_or_create_api_token(user):
-    from api.models import APIToken
+    from archivebox.api.models import APIToken
     
     if user and user.is_superuser:
         api_tokens = APIToken.objects.filter(created_by_id=user.pk, expires__gt=timezone.now())
@@ -32,7 +32,7 @@ def get_or_create_api_token(user):
 
 def auth_using_token(token, request: Optional[HttpRequest]=None) -> Optional[AbstractBaseUser]:
     """Given an API token string, check if a corresponding non-expired APIToken exists, and return its user"""
-    from api.models import APIToken        # lazy import model to avoid loading it at urls.py import time
+    from archivebox.api.models import APIToken        # lazy import model to avoid loading it at urls.py import time
     
     user = None
 
@@ -127,6 +127,20 @@ class UsernameAndPasswordAuth(UserPassAuthCheck, HttpBasicAuth):
     """Allow authenticating by passing username & password via HTTP Basic Authentication (not recommended)"""
     pass
 
+class DjangoSessionAuth:
+    """Allow authenticating with existing Django session cookies (same-origin only)."""
+    def __call__(self, request: HttpRequest) -> Optional[AbstractBaseUser]:
+        return self.authenticate(request)
+
+    def authenticate(self, request: HttpRequest, **kwargs) -> Optional[AbstractBaseUser]:
+        user = getattr(request, 'user', None)
+        if user and user.is_authenticated:
+            request._api_auth_method = self.__class__.__name__
+            if not user.is_superuser:
+                raise HttpError(403, 'Valid session but User does not have permission (make sure user.is_superuser=True)')
+            return cast(AbstractBaseUser, user)
+        return None
+
 ### Enabled Auth Methods
 
 API_AUTH_METHODS = [
@@ -134,5 +148,4 @@ API_AUTH_METHODS = [
     BearerTokenAuth(),
     QueryParamTokenAuth(), 
     # django_auth_superuser,       # django admin cookie auth, not secure to use with csrf=False
-    UsernameAndPasswordAuth(),
 ]

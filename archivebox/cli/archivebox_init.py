@@ -13,18 +13,14 @@ from archivebox.misc.util import docstring, enforce_types
 
 
 @enforce_types
-def init(force: bool=False, quick: bool=False, install: bool=False, setup: bool=False) -> None:
+def init(force: bool=False, quick: bool=False, install: bool=False) -> None:
     """Initialize a new ArchiveBox collection in the current directory"""
-    
-    install = install or setup
     
     from archivebox.config import CONSTANTS, VERSION, DATA_DIR
     from archivebox.config.common import SERVER_CONFIG
     from archivebox.config.collection import write_config_file
-    from archivebox.index import load_main_index, write_main_index, fix_invalid_folder_locations, get_invalid_folders
-    from archivebox.index.schema import Link
-    from archivebox.index.json import parse_json_main_index, parse_json_links_details
-    from archivebox.index.sql import apply_migrations
+    from archivebox.misc.legacy import parse_json_main_index, parse_json_links_details, SnapshotDict
+    from archivebox.misc.db import apply_migrations
     
     # if os.access(out_dir / CONSTANTS.JSON_INDEX_FILENAME, os.F_OK):
     #     print("[red]:warning: This folder contains a JSON index. It is deprecated, and will no longer be kept up to date automatically.[/red]", file=sys.stderr)
@@ -97,58 +93,46 @@ def init(force: bool=False, quick: bool=False, install: bool=False, setup: bool=
     print()
     print('[dodger_blue3][*] Checking links from indexes and archive folders (safe to Ctrl+C)...[/dodger_blue3]')
 
-    from core.models import Snapshot
+    from archivebox.core.models import Snapshot
 
     all_links = Snapshot.objects.none()
-    pending_links: dict[str, Link] = {}
+    pending_links: dict[str, SnapshotDict] = {}
 
     if existing_index:
-        all_links = load_main_index(DATA_DIR, warn=False)
+        all_links = Snapshot.objects.all()
         print(f'    √ Loaded {all_links.count()} links from existing main index.')
 
     if quick:
-        print('    > Skipping full snapshot directory check (quick mode)')
+        print('    > Skipping orphan snapshot import (quick mode)')
     else:
         try:
-            # Links in data folders that dont match their timestamp
-            fixed, cant_fix = fix_invalid_folder_locations(DATA_DIR)
-            if fixed:
-                print(f'    [yellow]√ Fixed {len(fixed)} data directory locations that didn\'t match their link timestamps.[/yellow]')
-            if cant_fix:
-                print(f'    [red]! Could not fix {len(cant_fix)} data directory locations due to conflicts with existing folders.[/red]')
-
-            # Links in JSON index but not in main index
+            # Import orphaned links from legacy JSON indexes
             orphaned_json_links = {
-                link.url: link
-                for link in parse_json_main_index(DATA_DIR)
-                if not all_links.filter(url=link.url).exists()
+                link_dict['url']: link_dict
+                for link_dict in parse_json_main_index(DATA_DIR)
+                if not all_links.filter(url=link_dict['url']).exists()
             }
             if orphaned_json_links:
                 pending_links.update(orphaned_json_links)
                 print(f'    [yellow]√ Added {len(orphaned_json_links)} orphaned links from existing JSON index...[/yellow]')
 
-            # Links in data dir indexes but not in main index
             orphaned_data_dir_links = {
-                link.url: link
-                for link in parse_json_links_details(DATA_DIR)
-                if not all_links.filter(url=link.url).exists()
+                link_dict['url']: link_dict
+                for link_dict in parse_json_links_details(DATA_DIR)
+                if not all_links.filter(url=link_dict['url']).exists()
             }
             if orphaned_data_dir_links:
                 pending_links.update(orphaned_data_dir_links)
                 print(f'    [yellow]√ Added {len(orphaned_data_dir_links)} orphaned links from existing archive directories.[/yellow]')
 
-            # Links in invalid/duplicate data dirs
-            invalid_folders = {
-                folder: link
-                for folder, link in get_invalid_folders(all_links, DATA_DIR).items()
-            }
-            if invalid_folders:
-                print(f'    [red]! Skipped adding {len(invalid_folders)} invalid link data directories.[/red]')
-                print('        X ' + '\n        X '.join(f'./{Path(folder).relative_to(DATA_DIR)} {link}' for folder, link in invalid_folders.items()))
-                print()
-                print('    [violet]Hint:[/violet] For more information about the link data directories that were skipped, run:')
-                print('        archivebox status')
-                print('        archivebox list --status=invalid')
+            if pending_links:
+                for link_dict in pending_links.values():
+                    Snapshot.from_json(link_dict)
+
+            # Hint for orphaned snapshot directories
+            print()
+            print('    [violet]Hint:[/violet] To import orphaned snapshot directories and reconcile filesystem state, run:')
+            print('        archivebox update')
 
         except (KeyboardInterrupt, SystemExit):
             print(file=sys.stderr)
@@ -158,8 +142,6 @@ def init(force: bool=False, quick: bool=False, install: bool=False, setup: bool=
             print('    [violet]Hint:[/violet] In the future you can run a quick init without checking dirs like so:', file=sys.stderr)
             print('        archivebox init --quick', file=sys.stderr)
             raise SystemExit(1)
-        
-        write_main_index(list(pending_links.values()), DATA_DIR)
 
     print('\n[green]----------------------------------------------------------------------[/green]')
 
@@ -178,10 +160,12 @@ def init(force: bool=False, quick: bool=False, install: bool=False, setup: bool=
     CONSTANTS.PERSONAS_DIR.mkdir(parents=True, exist_ok=True)
     CONSTANTS.DEFAULT_TMP_DIR.mkdir(parents=True, exist_ok=True)
     CONSTANTS.DEFAULT_LIB_DIR.mkdir(parents=True, exist_ok=True)
-    
+    (CONSTANTS.DEFAULT_LIB_DIR / 'bin').mkdir(parents=True, exist_ok=True)
+
     from archivebox.config.common import STORAGE_CONFIG
     STORAGE_CONFIG.TMP_DIR.mkdir(parents=True, exist_ok=True)
     STORAGE_CONFIG.LIB_DIR.mkdir(parents=True, exist_ok=True)
+    (STORAGE_CONFIG.LIB_DIR / 'bin').mkdir(parents=True, exist_ok=True)
     
     if install:
         from archivebox.cli.archivebox_install import install as install_method
@@ -204,7 +188,6 @@ def init(force: bool=False, quick: bool=False, install: bool=False, setup: bool=
 @click.option('--force', '-f', is_flag=True, help='Ignore unrecognized files in current directory and initialize anyway')
 @click.option('--quick', '-q', is_flag=True, help='Run any updates or migrations without rechecking all snapshot dirs')
 @click.option('--install', '-s', is_flag=True, help='Automatically install dependencies and extras used for archiving')
-@click.option('--setup', '-s', is_flag=True, help='DEPRECATED: equivalent to --install')
 @docstring(init.__doc__)
 def main(**kwargs) -> None:
     init(**kwargs)
